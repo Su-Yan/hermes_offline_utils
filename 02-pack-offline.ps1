@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -700,10 +700,51 @@ Write-Host ""
 Write-Host "正在压缩完整离线包..."
 Write-Host ""
 
-Compress-Archive `
-    -Path "$BundleRoot\*" `
-    -DestinationPath $ZipPath `
-    -CompressionLevel Optimal
+# 优先使用 7-Zip（多线程，速度约快 5-10 倍）
+$SevenZipExe = $null
+
+$SevenZipCmd = Get-Command 7z  -ErrorAction SilentlyContinue
+if (-not $SevenZipCmd) {
+    $SevenZipCmd = Get-Command 7za -ErrorAction SilentlyContinue
+}
+
+if ($SevenZipCmd) {
+    $SevenZipExe = $SevenZipCmd.Source
+} else {
+    $SevenZipCandidates = @(
+        "$env:ProgramFiles\7-Zip\7z.exe",
+        "${env:ProgramFiles(x86)}\7-Zip\7z.exe",
+        "$env:LOCALAPPDATA\Programs\7-Zip\7z.exe",
+        "$env:USERPROFILE\scoop\apps\7zip\current\7z.exe"
+    )
+    foreach ($c in $SevenZipCandidates) {
+        if (Test-Path $c) {
+            $SevenZipExe = $c
+            break
+        }
+    }
+}
+
+if ($SevenZipExe) {
+
+    Info "使用 7-Zip 压缩（多线程 -mmt=on，压缩级别 -mx=3）..."
+
+    & $SevenZipExe a -tzip -mx=3 -mmt=on $ZipPath "$BundleRoot\*"
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "7-Zip 压缩失败，退出码：$LASTEXITCODE"
+    }
+
+} else {
+
+    Warn "未找到 7-Zip，使用内置 Compress-Archive（单线程，较慢）。"
+    Warn "建议安装 7-Zip 以加速：winget install 7zip.7zip"
+
+    Compress-Archive `
+        -Path "$BundleRoot\*" `
+        -DestinationPath $ZipPath `
+        -CompressionLevel Fastest
+}
 
 $SizeGB = [Math]::Round(
     ((Get-Item $ZipPath).Length / 1GB),
