@@ -305,19 +305,9 @@ if (-not (Test-Path $PyProject)) {
     throw "找不到 Hermes pyproject.toml：$PyProject"
 }
 
-$ParseBuildRequirements = @'
-import pathlib, sys, tomllib
-
-root = pathlib.Path(sys.argv[1])
-pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-
-for requirement in pyproject.get("build-system", {}).get("requires", []):
-    print(requirement)
-'@
-
 $BuildReqs = & $PythonExe `
     -c `
-    $ParseBuildRequirements `
+    "import pathlib, sys, tomllib; p = tomllib.loads((pathlib.Path(sys.argv[1]) / 'pyproject.toml').read_text(encoding='utf-8')); print('\n'.join(p.get('build-system', {}).get('requires', [])))" `
     $RepoDir
 
 if ($LASTEXITCODE -ne 0) {
