@@ -425,11 +425,41 @@ Ok "Playwright Chromium 已缓存。"
 Info "准备 ffmpeg..."
 
 $FfmpegDir = Join-Path $ToolsDir "ffmpeg"
-
 Ensure-Dir $FfmpegDir
 
-# 优先使用系统已有 ffmpeg
 $FfmpegCommand = Get-Command ffmpeg -ErrorAction SilentlyContinue
+$FfmpegIncluded = $false
+
+if (-not $FfmpegCommand) {
+
+    Warn "ffmpeg 未安装，尝试自动安装..."
+
+    $Winget = Get-Command winget -ErrorAction SilentlyContinue
+
+    if ($Winget) {
+
+        winget install Gyan.FFmpeg.Shared `
+            --accept-source-agreements `
+            --accept-package-agreements `
+            --silent
+
+        # 刷新当前进程 PATH
+        $env:PATH = `
+            [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
+            [System.Environment]::GetEnvironmentVariable("PATH", "User")
+
+        $FfmpegCommand = Get-Command ffmpeg -ErrorAction SilentlyContinue
+
+        if ($FfmpegCommand) {
+            Ok "ffmpeg 安装成功。"
+        } else {
+            Warn "winget 安装完成，但 ffmpeg 仍不在 PATH 中，跳过打包。"
+        }
+
+    } else {
+        Warn "winget 不可用，跳过 ffmpeg。"
+    }
+}
 
 if ($FfmpegCommand) {
 
@@ -438,24 +468,11 @@ if ($FfmpegCommand) {
         (Join-Path $FfmpegDir "ffmpeg.exe") `
         -Force
 
+    & (Join-Path $FfmpegDir "ffmpeg.exe") -version | Select-Object -First 1
+
+    $FfmpegIncluded = $true
+    Ok "ffmpeg 已打包。"
 }
-else {
-
-    Warn "构建机没有 ffmpeg。"
-
-    Write-Host ""
-    Write-Host "请先在外网构建机安装 ffmpeg，然后重新运行本脚本。" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "例如使用 winget：" -ForegroundColor Yellow
-    Write-Host "    winget install Gyan.FFmpeg.Shared"
-    Write-Host ""
-
-    throw "缺少 ffmpeg.exe。"
-}
-
-& (Join-Path $FfmpegDir "ffmpeg.exe") -version | Select-Object -First 1
-
-Ok "ffmpeg 已打包。"
 
 # ============================================================
 # 11. ripgrep
@@ -464,10 +481,41 @@ Ok "ffmpeg 已打包。"
 Info "准备 ripgrep..."
 
 $RgDir = Join-Path $ToolsDir "ripgrep"
-
 Ensure-Dir $RgDir
 
 $RgCommand = Get-Command rg -ErrorAction SilentlyContinue
+$RgIncluded = $false
+
+if (-not $RgCommand) {
+
+    Warn "ripgrep 未安装，尝试自动安装..."
+
+    $Winget = Get-Command winget -ErrorAction SilentlyContinue
+
+    if ($Winget) {
+
+        winget install BurntSushi.ripgrep.MSVC `
+            --accept-source-agreements `
+            --accept-package-agreements `
+            --silent
+
+        # 刷新当前进程 PATH
+        $env:PATH = `
+            [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
+            [System.Environment]::GetEnvironmentVariable("PATH", "User")
+
+        $RgCommand = Get-Command rg -ErrorAction SilentlyContinue
+
+        if ($RgCommand) {
+            Ok "ripgrep 安装成功。"
+        } else {
+            Warn "winget 安装完成，但 rg 仍不在 PATH 中，跳过打包。"
+        }
+
+    } else {
+        Warn "winget 不可用，跳过 ripgrep。"
+    }
+}
 
 if ($RgCommand) {
 
@@ -476,24 +524,11 @@ if ($RgCommand) {
         (Join-Path $RgDir "rg.exe") `
         -Force
 
+    & (Join-Path $RgDir "rg.exe") --version
+
+    $RgIncluded = $true
+    Ok "ripgrep 已打包。"
 }
-else {
-
-    Warn "构建机没有 ripgrep。"
-
-    Write-Host ""
-    Write-Host "请先在外网构建机安装 ripgrep，然后重新运行本脚本。" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "例如使用 winget：" -ForegroundColor Yellow
-    Write-Host "    winget install BurntSushi.ripgrep.MSVC"
-    Write-Host ""
-
-    throw "缺少 rg.exe。"
-}
-
-& (Join-Path $RgDir "rg.exe") --version
-
-Ok "ripgrep 已打包。"
 
 # ============================================================
 # 12. Node runtime
@@ -696,13 +731,17 @@ if (-not (Test-Path $PlaywrightDir)) {
 $PythonVersion = & $PythonExe --version
 $GitVersion    = git --version
 
-$FfmpegVersion = `
-    & (Join-Path $FfmpegDir "ffmpeg.exe") -version 2>&1 |
-    Select-Object -First 1
+$FfmpegVersion = if ($FfmpegIncluded) {
+    & (Join-Path $FfmpegDir "ffmpeg.exe") -version 2>&1 | Select-Object -First 1
+} else {
+    "(not included)"
+}
 
-$RgVersion = `
-    & (Join-Path $RgDir "rg.exe") --version |
-    Select-Object -First 1
+$RgVersion = if ($RgIncluded) {
+    & (Join-Path $RgDir "rg.exe") --version | Select-Object -First 1
+} else {
+    "(not included)"
+}
 
 $AgentBrowserVersion = `
     & $AgentBrowserBin --version

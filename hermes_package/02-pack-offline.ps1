@@ -105,9 +105,7 @@ $Required = @(
     $Hermes,
     $Python,
     $GitBash,
-    $AgentBrowser,
-    $Ffmpeg,
-    $Rg
+    $AgentBrowser
 )
 
 foreach ($File in $Required) {
@@ -158,17 +156,21 @@ New-Item `
     "User"
 )
 
-[Environment]::SetEnvironmentVariable(
-    "HERMES_FFMPEG",
-    $Ffmpeg,
-    "User"
-)
+if (Test-Path $Ffmpeg) {
+    [Environment]::SetEnvironmentVariable(
+        "HERMES_FFMPEG",
+        $Ffmpeg,
+        "User"
+    )
+}
 
-[Environment]::SetEnvironmentVariable(
-    "HERMES_RIPGREP",
-    $Rg,
-    "User"
-)
+if (Test-Path $Rg) {
+    [Environment]::SetEnvironmentVariable(
+        "HERMES_RIPGREP",
+        $Rg,
+        "User"
+    )
+}
 
 # ============================================================
 # PATH
@@ -284,12 +286,19 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "ffmpeg:"
-& $Ffmpeg -version |
-    Select-Object -First 1
+if (Test-Path $Ffmpeg) {
+    & $Ffmpeg -version | Select-Object -First 1
+} else {
+    Write-Host "(not included)" -ForegroundColor Yellow
+}
 
 Write-Host ""
 Write-Host "ripgrep:"
-& $Rg --version
+if (Test-Path $Rg) {
+    & $Rg --version
+} else {
+    Write-Host "(not included)" -ForegroundColor Yellow
+}
 
 # ============================================================
 # Hermes
