@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -262,6 +262,42 @@ if ($LASTEXITCODE -ne 0) {
 Pop-Location
 
 Ok "Python dependencies 完成。"
+
+# ============================================================
+# 5b. pip wheels（供内网离线重建 venv）
+# ============================================================
+
+Info "下载 pip wheels 缓存（供内网无网络重建 venv）..."
+
+$PipWheelsDir = Join-Path $CacheDir "pip-wheels"
+Ensure-Dir $PipWheelsDir
+
+# uv venv 默认不含 pip，先通过 uv 装入
+Info "在 venv 中安装 pip..."
+& $Uv pip install --python $PythonExe pip
+
+if ($LASTEXITCODE -ne 0) {
+    throw "pip 安装到 venv 失败。"
+}
+
+# uv pip freeze 不依赖 pip 本身，可直接列出所有已装包（排除 editable 的 hermes）
+$FreezeFile = Join-Path $CacheDir "requirements-freeze.txt"
+
+& $Uv pip freeze --python $PythonExe --exclude-editable |
+    Set-Content $FreezeFile -Encoding UTF8
+
+Info "requirements-freeze.txt 已生成：$FreezeFile"
+
+# 用 pip download 把全部依赖下载为 wheel 文件
+& $PythonExe -m pip download `
+    --dest $PipWheelsDir `
+    --requirement $FreezeFile
+
+if ($LASTEXITCODE -ne 0) {
+    throw "pip wheels 下载失败。"
+}
+
+Ok "pip wheels 已缓存：$PipWheelsDir"
 
 # ============================================================
 # 6. Node workspace

@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -212,6 +212,47 @@ $env:PLAYWRIGHT_BROWSERS_PATH = $PlaywrightDir
 
 $env:PATH = `
     "$HermesBin;$NodeDir;$(Join-Path $GitDir 'bin');$AgentBrowserDir;$FfmpegDir;$RgDir;$env:PATH"
+
+# ============================================================
+# Rebuild venv with bundle Python (fixes uv trampoline)
+# ============================================================
+
+Write-Host ""
+Write-Host "重建 Python 虚拟环境（使用 Bundle Python，修复 uv trampoline）..."
+
+$BundlePython = Join-Path $Root "runtime\python\python.exe"
+$PipWheelsDir = Join-Path $Root "cache\pip-wheels"
+
+if (-not (Test-Path $BundlePython)) {
+    throw "Bundle Python 不存在：$BundlePython"
+}
+
+if (-not (Test-Path $PipWheelsDir)) {
+    throw "pip wheels 缓存不存在：$PipWheelsDir"
+}
+
+& $BundlePython -m venv (Join-Path $Root "hermes-agent\venv") --clear
+
+if ($LASTEXITCODE -ne 0) {
+    throw "venv 重建失败。"
+}
+
+Push-Location (Join-Path $Root "hermes-agent")
+
+& $Python -m pip install `
+    -e ".[all]" `
+    --no-index `
+    --find-links $PipWheelsDir `
+    --quiet
+
+if ($LASTEXITCODE -ne 0) {
+    Pop-Location
+    throw "pip 离线安装失败。"
+}
+
+Pop-Location
+
+Write-Host "venv 重建完成。"
 
 # ============================================================
 # Verify dependencies
@@ -676,6 +717,34 @@ $Readme |
     Set-Content `
         -Encoding UTF8 `
         (Join-Path $BundleRoot "README-OFFLINE.txt")
+
+# ============================================================
+# Utility scripts
+# ============================================================
+
+Info "打包工具脚本到 utils\ ..."
+
+$UtilsDir = Join-Path $BundleRoot "utils"
+Ensure-Dir $UtilsDir
+
+$UtilsFiles = @(
+    "00-install.sh",
+    "01-build-offline.ps1",
+    "02-pack-offline.ps1",
+    "03-install-offline.ps1",
+    "04-verify-offline.ps1",
+    "README.md"
+)
+
+foreach ($F in $UtilsFiles) {
+    $Src = Join-Path $ScriptRoot $F
+    if (Test-Path $Src) {
+        Copy-Item $Src (Join-Path $UtilsDir $F) -Force
+        Ok "  utils: $F"
+    } else {
+        Warn "  utils: $F 不存在，跳过。"
+    }
+}
 
 # ============================================================
 # ZIP
