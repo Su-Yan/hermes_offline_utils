@@ -600,10 +600,21 @@ Ok "Git Bash: $GitBash"
 
 Info "收集 Python runtime..."
 
-$PythonHome = (& $Uv python find 3.11).Trim()
+# uv python find 返回的是 python.exe 完整路径，取父目录才是安装根目录
+$PythonExePath = (& $Uv python find 3.11).Trim()
 
-if (-not $PythonHome) {
+if (-not $PythonExePath) {
     throw "无法获取 Python runtime 路径。"
+}
+
+Info "Python exe: $PythonExePath"
+
+$PythonHome = Split-Path -Parent $PythonExePath
+
+Info "Python home: $PythonHome"
+
+if (-not (Test-Path $PythonHome)) {
+    throw "Python runtime 目录不存在：$PythonHome"
 }
 
 if (Test-Path $PythonDir) {
@@ -611,6 +622,13 @@ if (Test-Path $PythonDir) {
 }
 
 Copy-Dir $PythonHome $PythonDir
+
+# 验证拷贝结果
+$BundledPythonExe = Join-Path $PythonDir "python.exe"
+
+if (-not (Test-Path $BundledPythonExe)) {
+    throw "Python runtime 拷贝失败，找不到：$BundledPythonExe"
+}
 
 Ok "Python runtime 完成。"
 
