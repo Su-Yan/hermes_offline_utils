@@ -37,3 +37,38 @@ $RECYCLE.BIN/
 
 # JetBrains
 .idea/
+
+# npm
+node_modules/
+.npm/
+npm-cache/
+npm-packages/
+
+# temporary
+test-install/
+tmp/
+temp/
+logs/
+
+# generated packages
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+
+# generated metadata
+VERSION.txt
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# PowerShell temporary files
+*.ps1.bak
