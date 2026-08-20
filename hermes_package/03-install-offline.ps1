@@ -22,3 +22,5 @@ Set-ExecutionPolicy `
     -NoProfile `
     -ExecutionPolicy Bypass `
     -File $Installer
+
+exit $LASTEXITCODE

@@ -297,6 +297,58 @@ if ($LASTEXITCODE -ne 0) {
     throw "pip wheels 下载失败。"
 }
 
+# Hermes 自身 pyproject.toml 里声明的 build-system requires 也需要缓存，
+# 否则内网重建 venv 时 pip build isolation 找不到 setuptools 等构建依赖。
+$PyProject = Join-Path $RepoDir "pyproject.toml"
+
+if (-not (Test-Path $PyProject)) {
+    throw "找不到 Hermes pyproject.toml：$PyProject"
+}
+
+$ParseBuildRequirements = @'
+import pathlib, sys, tomllib
+
+root = pathlib.Path(sys.argv[1])
+pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+
+for requirement in pyproject.get("build-system", {}).get("requires", []):
+    print(requirement)
+'@
+
+$BuildReqs = & $PythonExe `
+    -c `
+    $ParseBuildRequirements `
+    $RepoDir
+
+if ($LASTEXITCODE -ne 0) {
+    throw "解析 Hermes build-system requires 失败。"
+}
+
+$BuildReqs = @(
+    $BuildReqs |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ }
+)
+
+if (($BuildReqs -join ",") -notmatch "wheel") {
+    $BuildReqs += "wheel"
+}
+
+if ($BuildReqs.Count -gt 0) {
+
+    Info "缓存 Hermes build-system wheels：$($BuildReqs -join ', ')"
+
+    & $PythonExe -m pip download `
+        --dest $PipWheelsDir `
+        @BuildReqs
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Hermes build-system wheels 下载失败。"
+    }
+
+    Ok "Hermes build-system wheels 已缓存。"
+}
+
 Ok "pip wheels 已缓存：$PipWheelsDir"
 
 # ============================================================
