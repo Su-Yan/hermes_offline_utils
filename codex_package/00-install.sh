@@ -5,17 +5,18 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PS_SCRIPT="${SCRIPT_DIR}/build-codex-offline.ps1"
 
+echo
 echo "============================================================"
 echo " Codex CLI Offline Package Builder"
 echo "============================================================"
 echo
 
-echo "Script directory:"
+echo "Project directory:"
 echo "  ${SCRIPT_DIR}"
 echo
 
 if [[ ! -f "${PS_SCRIPT}" ]]; then
-    echo "ERROR: PowerShell script not found:"
+    echo "ERROR: PowerShell build script not found:"
     echo "  ${PS_SCRIPT}"
     exit 1
 fi
@@ -40,8 +41,8 @@ else
 
     echo "ERROR: PowerShell was not found."
     echo
-    echo "Please install PowerShell or run this script"
-    echo "from Git Bash on Windows."
+    echo "Please run this script from Windows Git Bash"
+    echo "or install PowerShell."
     exit 1
 
 fi
@@ -66,7 +67,7 @@ echo
 if [[ ${EXIT_CODE} -ne 0 ]]; then
 
     echo "============================================================"
-    echo " Codex offline package build FAILED"
+    echo " BUILD FAILED"
     echo "============================================================"
 
     exit ${EXIT_CODE}
@@ -74,5 +75,6 @@ if [[ ${EXIT_CODE} -ne 0 ]]; then
 fi
 
 echo "============================================================"
-echo " Codex offline package build SUCCESS"
+echo " BUILD SUCCESS"
 echo "============================================================"
+echo

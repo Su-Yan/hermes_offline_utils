@@ -3,17 +3,11 @@
 $ErrorActionPreference = "Stop"
 
 # ============================================================
-# Codex CLI npm 离线安装包制作脚本
+# Codex CLI Offline Builder
 #
-# 所有路径均为相对于本脚本所在目录的相对路径
-#
-# 使用：
-#   powershell -ExecutionPolicy Bypass -File .\build-codex-offline.ps1
+# 所有路径均基于当前脚本目录
+# 不使用任何固定盘符
 # ============================================================
-
-# ------------------------------------------------------------
-# 获取脚本所在目录
-# ------------------------------------------------------------
 
 $Root = $PSScriptRoot
 
@@ -23,329 +17,32 @@ if ([string]::IsNullOrWhiteSpace($Root)) {
 
 $PackageName = "@openai/codex"
 
-$DownloadDir = Join-Path $Root "npm-packages"
-$CacheDir    = Join-Path $Root "npm-cache"
-$InstallDir  = Join-Path $Root "test-install"
+$NpmCacheDir = Join-Path $Root "npm-cache"
+$PackageDir  = Join-Path $Root "npm-packages"
+$TestDir     = Join-Path $Root "test-install"
 $LogDir      = Join-Path $Root "logs"
 $DeployDir   = Join-Path $Root "deployment"
 
+$PackageJson = Join-Path $Root "package.json"
+$PackageLock = Join-Path $Root "package-lock.json"
+$VersionFile = Join-Path $Root "VERSION.txt"
+$ShaFile     = Join-Path $Root "SHA256SUMS.txt"
+
 Write-Host ""
 Write-Host "============================================================"
-Write-Host " Codex CLI Offline Package Builder"
+Write-Host " Codex CLI Offline Builder"
 Write-Host "============================================================"
 Write-Host ""
 
-Write-Host "Root directory:"
+Write-Host "Root:"
 Write-Host "  $Root"
 Write-Host ""
 
-# ------------------------------------------------------------
-# 1. 检查 Node.js / npm
-# ------------------------------------------------------------
-
-Write-Host "[1/10] Checking Node.js and npm..." -ForegroundColor Cyan
-
-try {
-
-    $NodeVersion = node -v
-    $NpmVersion  = npm -v
-
-}
-catch {
-
-    Write-Host ""
-    Write-Host "ERROR: Node.js or npm was not found." -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Please install Node.js first."
-    exit 1
-}
-
-Write-Host "Node.js : $NodeVersion"
-Write-Host "npm     : $NpmVersion"
-
-# ------------------------------------------------------------
-# 2. 创建目录
-# ------------------------------------------------------------
-
-Write-Host ""
-Write-Host "[2/10] Creating directories..." -ForegroundColor Cyan
-
-$Directories = @(
-    $DownloadDir,
-    $CacheDir,
-    $InstallDir,
-    $LogDir,
-    $DeployDir
-)
-
-foreach ($Directory in $Directories) {
-
-    if (!(Test-Path $Directory)) {
-
-        New-Item `
-            -ItemType Directory `
-            -Path $Directory `
-            -Force | Out-Null
-    }
-}
-
-# ------------------------------------------------------------
-# 3. 获取 Codex 当前版本
-# ------------------------------------------------------------
-
-Write-Host ""
-Write-Host "[3/10] Getting Codex version..." -ForegroundColor Cyan
-
-$Version = npm view $PackageName version
-
-if ([string]::IsNullOrWhiteSpace($Version)) {
-
-    Write-Host ""
-    Write-Host "ERROR: Failed to get Codex version." -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "Codex version: $Version" -ForegroundColor Green
-
-Set-Content `
-    -Path (Join-Path $Root "VERSION.txt") `
-    -Value $Version `
-    -Encoding UTF8
-
-# ------------------------------------------------------------
-# 4. 下载 Codex npm package
-# ------------------------------------------------------------
-
-Write-Host ""
-Write-Host "[4/10] Downloading Codex npm package..." -ForegroundColor Cyan
-
-Push-Location $DownloadDir
-
-try {
-
-    npm pack "$PackageName@$Version"
-
-    if ($LASTEXITCODE -ne 0) {
-
-        Write-Host ""
-        Write-Host "ERROR: npm pack failed." -ForegroundColor Red
-        exit 1
-    }
-
-}
-finally {
-
-    Pop-Location
-}
-
-$CodexPackage = Get-ChildItem `
-    -Path $DownloadDir `
-    -Filter "*.tgz" |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
-
-if ($null -eq $CodexPackage) {
-
-    Write-Host ""
-    Write-Host "ERROR: Codex npm package was not found." -ForegroundColor Red
-    exit 1
-}
-
-Write-Host ""
-Write-Host "Downloaded package:"
-Write-Host "  $($CodexPackage.Name)" -ForegroundColor Green
-
-# ------------------------------------------------------------
-# 5. 准备独立 npm cache
-# ------------------------------------------------------------
-
-Write-Host ""
-Write-Host "[5/10] Preparing npm cache..." -ForegroundColor Cyan
-
-Write-Host "Cache directory:"
-Write-Host "  $CacheDir"
-
-npm cache add `
-    $CodexPackage.FullName `
-    --cache $CacheDir
-
-if ($LASTEXITCODE -ne 0) {
-
-    Write-Host ""
-    Write-Host "ERROR: Failed to add package to npm cache." -ForegroundColor Red
-    exit 1
-}
-
-# ------------------------------------------------------------
-# 6. 尝试下载依赖到离线 cache
-# ------------------------------------------------------------
-
-Write-Host ""
-Write-Host "[6/10] Preparing dependencies..." -ForegroundColor Cyan
-
-$TempPackageJson = Join-Path $InstallDir "package.json"
-
-@"
-{
-  "name": "codex-offline-test",
-  "version": "1.0.0",
-  "private": true,
-  "dependencies": {
-    "@openai/codex": "$Version"
-  }
-}
-"@ | Set-Content `
-    -Path $TempPackageJson `
-    -Encoding UTF8
-
-Push-Location $InstallDir
-
-try {
-
-    Write-Host ""
-    Write-Host "Downloading npm dependencies into offline cache..."
-
-    npm install `
-        --package-lock=false `
-        --cache $CacheDir `
-        --prefer-offline `
-        --no-audit `
-        --no-fund
-
-    if ($LASTEXITCODE -ne 0) {
-
-        Write-Host ""
-        Write-Host "ERROR: Failed to download dependencies." -ForegroundColor Red
-        exit 1
-    }
-
-}
-finally {
-
-    Pop-Location
-}
-
-# ------------------------------------------------------------
-# 7. 删除测试安装目录
-# ------------------------------------------------------------
-
-Write-Host ""
-Write-Host "[7/10] Cleaning temporary test installation..." -ForegroundColor Cyan
-
-if (Test-Path $InstallDir) {
-
-    Remove-Item `
-        -Path $InstallDir `
-        -Recurse `
-        -Force
-}
-
-New-Item `
-    -ItemType Directory `
-    -Path $InstallDir `
-    -Force | Out-Null
-
-# ------------------------------------------------------------
-# 8. 真正进行 Offline 安装测试
-# ------------------------------------------------------------
-
-Write-Host ""
-Write-Host "[8/10] Testing offline installation..." -ForegroundColor Cyan
-
-$TestPackageJson = Join-Path $InstallDir "package.json"
-
-@"
-{
-  "name": "codex-offline-test",
-  "version": "1.0.0",
-  "private": true,
-  "dependencies": {
-    "@openai/codex": "$Version"
-  }
-}
-"@ | Set-Content `
-    -Path $TestPackageJson `
-    -Encoding UTF8
-
-Push-Location $InstallDir
-
-try {
-
-    Write-Host ""
-    Write-Host "Running npm install --offline..."
-    Write-Host ""
-
-    npm install `
-        --offline `
-        --cache $CacheDir `
-        --no-audit `
-        --no-fund
-
-    if ($LASTEXITCODE -ne 0) {
-
-        Write-Host ""
-        Write-Host "============================================================"
-        Write-Host " OFFLINE INSTALL TEST FAILED"
-        Write-Host "============================================================"
-        Write-Host ""
-
-        Write-Host "Some npm dependencies are missing from the offline cache."
-        Write-Host ""
-
-        exit 1
-    }
-
-}
-finally {
-
-    Pop-Location
-}
-
-Write-Host ""
-Write-Host "Offline installation test PASSED." -ForegroundColor Green
-
-# ------------------------------------------------------------
-# 9. 创建部署脚本
-# ------------------------------------------------------------
-
-Write-Host ""
-Write-Host "[9/10] Creating deployment scripts..." -ForegroundColor Cyan
-
-# ------------------------------------------------------------
-# install.ps1
-# ------------------------------------------------------------
-
-$InstallScript = @'
-#Requires -Version 5.1
-
-$ErrorActionPreference = "Stop"
-
 # ============================================================
-# Codex CLI Offline Installer
-# 所有路径均相对于 install.ps1 所在目录
+# 1. 检查 Node / npm
 # ============================================================
 
-$Root = $PSScriptRoot
-
-$PackageDir = Join-Path $Root "..\npm-packages"
-$CacheDir   = Join-Path $Root "..\npm-cache"
-
-Write-Host ""
-Write-Host "============================================================"
-Write-Host " Codex CLI Offline Installer"
-Write-Host "============================================================"
-Write-Host ""
-
-Write-Host "Package directory:"
-Write-Host "  $PackageDir"
-
-Write-Host ""
-Write-Host "npm cache:"
-Write-Host "  $CacheDir"
-
-# ------------------------------------------------------------
-# 检查 npm
-# ------------------------------------------------------------
+Write-Host "[1/12] Checking Node.js..." -ForegroundColor Cyan
 
 try {
 
@@ -360,58 +57,402 @@ catch {
     exit 1
 }
 
-Write-Host ""
 Write-Host "Node.js : $NodeVersion"
 Write-Host "npm     : $NpmVersion"
 
-# ------------------------------------------------------------
-# 检查 package
-# ------------------------------------------------------------
+# ============================================================
+# 2. 创建目录
+# ============================================================
 
-$Package = Get-ChildItem `
-    -Path $PackageDir `
-    -Filter "*.tgz" |
-    Select-Object -First 1
+Write-Host ""
+Write-Host "[2/12] Preparing directories..." -ForegroundColor Cyan
 
-if ($null -eq $Package) {
+$Directories = @(
+    $NpmCacheDir,
+    $PackageDir,
+    $TestDir,
+    $LogDir,
+    $DeployDir
+)
+
+foreach ($Directory in $Directories) {
+
+    New-Item `
+        -ItemType Directory `
+        -Path $Directory `
+        -Force | Out-Null
+}
+
+# ============================================================
+# 3. 获取 Codex 版本
+# ============================================================
+
+Write-Host ""
+Write-Host "[3/12] Getting Codex version..." -ForegroundColor Cyan
+
+$Version = npm view $PackageName version
+
+if ([string]::IsNullOrWhiteSpace($Version)) {
 
     Write-Host ""
-    Write-Host "ERROR: Codex npm package not found." -ForegroundColor Red
+    Write-Host "ERROR: Cannot get Codex version." -ForegroundColor Red
     exit 1
 }
 
+Write-Host "Codex version:"
+Write-Host "  $Version" -ForegroundColor Green
+
+Set-Content `
+    -Path $VersionFile `
+    -Value $Version `
+    -Encoding UTF8
+
+# ============================================================
+# 4. 创建 package.json
+# ============================================================
+
+Write-Host ""
+Write-Host "[4/12] Creating package.json..." -ForegroundColor Cyan
+
+$PackageJsonContent = @"
+{
+  "name": "codex-offline-build",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@openai/codex": "$Version"
+  }
+}
+"@
+
+Set-Content `
+    -Path $PackageJson `
+    -Value $PackageJsonContent `
+    -Encoding UTF8
+
+# ============================================================
+# 5. 生成 package-lock.json
+# ============================================================
+
+Write-Host ""
+Write-Host "[5/12] Generating package-lock.json..." -ForegroundColor Cyan
+
+Push-Location $Root
+
+try {
+
+    npm install `
+        --package-lock-only `
+        --ignore-scripts `
+        --no-audit `
+        --no-fund
+
+    if ($LASTEXITCODE -ne 0) {
+
+        Write-Host ""
+        Write-Host "ERROR: Failed to generate package-lock.json." `
+            -ForegroundColor Red
+
+        exit 1
+    }
+
+}
+finally {
+
+    Pop-Location
+}
+
+# ============================================================
+# 6. 下载完整依赖
+# ============================================================
+
+Write-Host ""
+Write-Host "[6/12] Downloading complete npm dependency tree..." `
+    -ForegroundColor Cyan
+
+Push-Location $Root
+
+try {
+
+    npm ci `
+        --cache $NpmCacheDir `
+        --prefer-offline `
+        --no-audit `
+        --no-fund
+
+    if ($LASTEXITCODE -ne 0) {
+
+        Write-Host ""
+        Write-Host "ERROR: npm dependency download failed." `
+            -ForegroundColor Red
+
+        exit 1
+    }
+
+}
+finally {
+
+    Pop-Location
+}
+
+# ============================================================
+# 7. 保存 Codex npm package
+# ============================================================
+
+Write-Host ""
+Write-Host "[7/12] Packing Codex npm package..." -ForegroundColor Cyan
+
+Push-Location $PackageDir
+
+try {
+
+    npm pack "$PackageName@$Version"
+
+    if ($LASTEXITCODE -ne 0) {
+
+        Write-Host ""
+        Write-Host "ERROR: npm pack failed." -ForegroundColor Red
+
+        exit 1
+    }
+
+}
+finally {
+
+    Pop-Location
+}
+
+# ============================================================
+# 8. 清理 node_modules
+# ============================================================
+
+Write-Host ""
+Write-Host "[8/12] Cleaning temporary node_modules..." `
+    -ForegroundColor Cyan
+
+$NodeModules = Join-Path $Root "node_modules"
+
+if (Test-Path $NodeModules) {
+
+    Remove-Item `
+        -Path $NodeModules `
+        -Recurse `
+        -Force
+}
+
+# ============================================================
+# 9. 真正的 Offline npm ci 测试
+# ============================================================
+
+Write-Host ""
+Write-Host "[9/12] Running TRUE offline installation test..." `
+    -ForegroundColor Cyan
+
+if (Test-Path $TestDir) {
+
+    Remove-Item `
+        -Path $TestDir `
+        -Recurse `
+        -Force
+}
+
+New-Item `
+    -ItemType Directory `
+    -Path $TestDir `
+    -Force | Out-Null
+
+Copy-Item `
+    -Path $PackageJson `
+    -Destination $TestDir
+
+Copy-Item `
+    -Path $PackageLock `
+    -Destination $TestDir
+
+Push-Location $TestDir
+
+try {
+
+    Write-Host ""
+    Write-Host "Executing:"
+    Write-Host "  npm ci --offline"
+    Write-Host ""
+
+    npm ci `
+        --offline `
+        --cache $NpmCacheDir `
+        --no-audit `
+        --no-fund
+
+    if ($LASTEXITCODE -ne 0) {
+
+        Write-Host ""
+        Write-Host "============================================================"
+        Write-Host " OFFLINE TEST FAILED"
+        Write-Host "============================================================"
+
+        exit 1
+    }
+
+}
+finally {
+
+    Pop-Location
+}
+
+Write-Host ""
+Write-Host "TRUE OFFLINE INSTALL TEST PASSED." `
+    -ForegroundColor Green
+
+# ============================================================
+# 10. 生成 SHA256
+# ============================================================
+
+Write-Host ""
+Write-Host "[10/12] Generating SHA256 checksums..." `
+    -ForegroundColor Cyan
+
+if (Test-Path $ShaFile) {
+
+    Remove-Item `
+        -Path $ShaFile `
+        -Force
+}
+
+$FilesToHash = @(
+    $PackageJson,
+    $PackageLock,
+    $VersionFile
+)
+
+Get-ChildItem `
+    -Path $PackageDir `
+    -Recurse `
+    -File |
+    ForEach-Object {
+
+        $FilesToHash += $_.FullName
+    }
+
+foreach ($File in $FilesToHash) {
+
+    if (Test-Path $File) {
+
+        $Hash = Get-FileHash `
+            -Path $File `
+            -Algorithm SHA256
+
+        $Relative = $File.Substring($Root.Length + 1)
+
+        Add-Content `
+            -Path $ShaFile `
+            -Value "$($Hash.Hash)  $Relative" `
+            -Encoding UTF8
+    }
+}
+
+# ============================================================
+# 11. 生成部署脚本
+# ============================================================
+
+Write-Host ""
+Write-Host "[11/12] Creating deployment scripts..." `
+    -ForegroundColor Cyan
+
 # ------------------------------------------------------------
-# 检查 npm cache
+# install.ps1
 # ------------------------------------------------------------
+
+$InstallScript = @'
+#Requires -Version 5.1
+
+$ErrorActionPreference = "Stop"
+
+# ============================================================
+# Codex CLI Offline Installer
+# ============================================================
+
+$Root = Split-Path `
+    -Parent `
+    $PSScriptRoot
+
+$PackageJson = Join-Path `
+    $Root `
+    "package.json"
+
+$PackageLock = Join-Path `
+    $Root `
+    "package-lock.json"
+
+$CacheDir = Join-Path `
+    $Root `
+    "npm-cache"
+
+Write-Host ""
+Write-Host "============================================================"
+Write-Host " Codex CLI Offline Installer"
+Write-Host "============================================================"
+Write-Host ""
+
+# ------------------------------------------------------------
+# Node / npm
+# ------------------------------------------------------------
+
+Write-Host "[1] Checking Node.js..."
+
+node -v
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Node.js is not available."
+}
+
+Write-Host ""
+Write-Host "[2] Checking npm..."
+
+npm -v
+
+if ($LASTEXITCODE -ne 0) {
+    throw "npm is not available."
+}
+
+# ------------------------------------------------------------
+# 检查文件
+# ------------------------------------------------------------
+
+if (!(Test-Path $PackageJson)) {
+    throw "package.json not found."
+}
+
+if (!(Test-Path $PackageLock)) {
+    throw "package-lock.json not found."
+}
 
 if (!(Test-Path $CacheDir)) {
-
-    Write-Host ""
-    Write-Host "ERROR: npm cache not found." -ForegroundColor Red
-    exit 1
+    throw "npm-cache not found."
 }
 
 # ------------------------------------------------------------
-# 离线安装
+# 全局安装
 # ------------------------------------------------------------
 
 Write-Host ""
-Write-Host "Installing Codex CLI..."
+Write-Host "[3] Installing Codex CLI..."
 Write-Host ""
 
-npm install -g `
-    $Package.FullName `
-    --offline `
+npm install `
+    -g `
+    "$Root\package.json" `
     --cache $CacheDir `
+    --offline `
     --no-audit `
     --no-fund
 
 if ($LASTEXITCODE -ne 0) {
 
     Write-Host ""
-    Write-Host "============================================================"
-    Write-Host " INSTALLATION FAILED"
-    Write-Host "============================================================"
+    Write-Host "Codex installation FAILED." `
+        -ForegroundColor Red
+
     exit 1
 }
 
@@ -420,37 +461,34 @@ if ($LASTEXITCODE -ne 0) {
 # ------------------------------------------------------------
 
 Write-Host ""
-Write-Host "Checking Codex..."
-Write-Host ""
+Write-Host "[4] Checking Codex..."
 
-$Codex = Get-Command codex -ErrorAction SilentlyContinue
+$Codex = Get-Command `
+    codex `
+    -ErrorAction SilentlyContinue
 
 if ($null -eq $Codex) {
 
     Write-Host ""
-    Write-Host "WARNING: codex command was not found in current PATH." `
-        -ForegroundColor Yellow
+    Write-Host "Codex command not found." `
+        -ForegroundColor Red
 
-    Write-Host ""
-    Write-Host "Please close and reopen PowerShell, then run:"
-    Write-Host ""
-    Write-Host "    codex --version"
-
-}
-else {
-
-    Write-Host "Codex executable:"
-    Write-Host "  $($Codex.Source)"
-
-    Write-Host ""
-    Write-Host "Codex version:"
-    codex --version
-
-    Write-Host ""
-    Write-Host "Codex CLI installed successfully." `
-        -ForegroundColor Green
+    exit 1
 }
 
+Write-Host ""
+Write-Host "Codex:"
+Write-Host "  $($Codex.Source)"
+
+Write-Host ""
+Write-Host "Version:"
+
+codex --version
+
+Write-Host ""
+Write-Host "============================================================"
+Write-Host " Codex CLI installation SUCCESS"
+Write-Host "============================================================"
 Write-Host ""
 '@
 
@@ -470,48 +508,43 @@ $ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "============================================================"
-Write-Host " Codex CLI Installation Check"
+Write-Host " Codex CLI Check"
 Write-Host "============================================================"
 Write-Host ""
 
-Write-Host "[1] Node.js"
-Write-Host "--------------------------------------------"
-
+Write-Host "[Node.js]"
 node -v
 
 Write-Host ""
-Write-Host "[2] npm"
-Write-Host "--------------------------------------------"
-
+Write-Host "[npm]"
 npm -v
 
 Write-Host ""
-Write-Host "[3] Codex"
-Write-Host "--------------------------------------------"
+Write-Host "[Codex]"
 
-$Codex = Get-Command codex -ErrorAction SilentlyContinue
+$Codex = Get-Command `
+    codex `
+    -ErrorAction SilentlyContinue
 
 if ($null -eq $Codex) {
 
-    Write-Host "Codex command NOT FOUND." -ForegroundColor Red
-
-    Write-Host ""
-    Write-Host "Current PATH:"
-    Write-Host $env:PATH
+    Write-Host "Codex NOT FOUND." `
+        -ForegroundColor Red
 
     exit 1
 }
 
-Write-Host "Codex executable:"
-Write-Host $Codex.Source
+Write-Host "Path:"
+Write-Host "  $($Codex.Source)"
 
 Write-Host ""
-Write-Host "Codex version:"
+Write-Host "Version:"
 
 codex --version
 
 Write-Host ""
-Write-Host "Installation check PASSED." -ForegroundColor Green
+Write-Host "Codex check PASSED." `
+    -ForegroundColor Green
 '@
 
 Set-Content `
@@ -529,25 +562,24 @@ $UninstallScript = @'
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "============================================================"
-Write-Host " Codex CLI Uninstaller"
-Write-Host "============================================================"
-Write-Host ""
+Write-Host "Uninstalling Codex CLI..."
 
-npm uninstall -g @openai/codex
+npm uninstall `
+    -g `
+    @openai/codex
 
-if ($LASTEXITCODE -eq 0) {
-
-    Write-Host ""
-    Write-Host "Codex CLI removed successfully." `
-        -ForegroundColor Green
-}
-else {
+if ($LASTEXITCODE -ne 0) {
 
     Write-Host ""
-    Write-Host "Codex uninstall failed." `
+    Write-Host "Uninstall FAILED." `
         -ForegroundColor Red
+
+    exit 1
 }
+
+Write-Host ""
+Write-Host "Codex CLI uninstalled." `
+    -ForegroundColor Green
 '@
 
 Set-Content `
@@ -555,14 +587,17 @@ Set-Content `
     -Value $UninstallScript `
     -Encoding UTF8
 
-# ------------------------------------------------------------
-# README
-# ------------------------------------------------------------
+# ============================================================
+# 12. 生成 README
+# ============================================================
+
+Write-Host ""
+Write-Host "[12/12] Creating README..." -ForegroundColor Cyan
 
 $Readme = @"
-# Codex CLI Offline Installation Package
+# Codex CLI Offline Package
 
-## Package
+## Version
 
 @openai/codex@$Version
 
@@ -572,24 +607,9 @@ Node.js: $NodeVersion
 
 npm: $NpmVersion
 
-## Directory Structure
+## Offline Installation
 
-npm-packages\
-    Codex npm package
-
-npm-cache\
-    Complete npm offline cache
-
-deployment\
-    install.ps1
-    check.ps1
-    uninstall.ps1
-
-## Installation
-
-Copy the entire package directory to the offline Windows computer.
-
-Open PowerShell.
+Open PowerShell as Administrator.
 
 Run:
 
@@ -601,10 +621,6 @@ Then:
 
     .\install.ps1
 
-After installation:
-
-    codex --version
-
 Check:
 
     .\check.ps1
@@ -615,13 +631,12 @@ Check:
 
 ## Important
 
-The package contains the Codex CLI software and npm dependencies.
+This package contains Codex CLI and its npm dependency cache.
 
-The Codex CLI itself still needs access to a supported model service
-for actual AI operations.
+The CLI still needs a model service for AI functionality.
 
-If the target environment is completely isolated from the Internet,
-an internally accessible model/API endpoint is required.
+A completely isolated network therefore requires an internally
+accessible compatible model/API endpoint.
 "@
 
 Set-Content `
@@ -629,71 +644,48 @@ Set-Content `
     -Value $Readme `
     -Encoding UTF8
 
-# ------------------------------------------------------------
-# 10. 最终检查
-# ------------------------------------------------------------
+# ============================================================
+# 创建 ZIP
+# ============================================================
 
 Write-Host ""
-Write-Host "[10/10] Final verification..." -ForegroundColor Cyan
+Write-Host "Creating offline ZIP..." -ForegroundColor Cyan
 
-Write-Host ""
-Write-Host "Package files:"
-Write-Host "--------------------------------------------"
+$Parent = Split-Path `
+    -Parent `
+    $Root
 
-Get-ChildItem `
-    -Path $Root `
-    -Recurse `
-    -File |
-    ForEach-Object {
+$Name = Split-Path `
+    -Leaf `
+    $Root
 
-        $Relative = $_.FullName.Substring($Root.Length + 1)
+$Zip = Join-Path `
+    $Parent `
+    "$Name-$Version.zip"
 
-        Write-Host $Relative
-    }
-
-Write-Host ""
-Write-Host "============================================================"
-Write-Host " Codex offline package created successfully."
-Write-Host "============================================================"
-Write-Host ""
-
-Write-Host "Package root:"
-Write-Host "  $Root" -ForegroundColor Green
-
-Write-Host ""
-Write-Host "Copy this entire directory to the offline computer."
-Write-Host ""
-
-# ------------------------------------------------------------
-# ZIP
-# ------------------------------------------------------------
-
-$ParentDir = Split-Path $Root -Parent
-$FolderName = Split-Path $Root -Leaf
-
-$ZipFile = Join-Path `
-    $ParentDir `
-    "$FolderName-$Version.zip"
-
-if (Test-Path $ZipFile) {
+if (Test-Path $Zip) {
 
     Remove-Item `
-        $ZipFile `
+        $Zip `
         -Force
 }
 
-Write-Host "Creating ZIP package..."
-
 Compress-Archive `
     -Path "$Root\*" `
-    -DestinationPath $ZipFile `
+    -DestinationPath $Zip `
     -CompressionLevel Optimal
 
 Write-Host ""
-Write-Host "ZIP package:"
-Write-Host "  $ZipFile" -ForegroundColor Green
+Write-Host "============================================================"
+Write-Host " BUILD COMPLETE"
+Write-Host "============================================================"
+Write-Host ""
+
+Write-Host "Version:"
+Write-Host "  $Version"
 
 Write-Host ""
-Write-Host "============================================================"
-Write-Host " DONE"
-Write-Host "============================================================"
+Write-Host "Offline package:"
+Write-Host "  $Zip" -ForegroundColor Green
+
+Write-Host ""
