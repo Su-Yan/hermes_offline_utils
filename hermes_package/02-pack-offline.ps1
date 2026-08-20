@@ -731,10 +731,13 @@ $Readme |
 # Utility scripts
 # ============================================================
 
-Info "打包工具脚本到 utils\ ..."
+Write-Host "[INFO] 打包工具脚本到 utils\ ..." -ForegroundColor Cyan
 
 $UtilsDir = Join-Path $BundleRoot "utils"
-Ensure-Dir $UtilsDir
+
+if (-not (Test-Path $UtilsDir)) {
+    New-Item -ItemType Directory -Path $UtilsDir -Force | Out-Null
+}
 
 $UtilsFiles = @(
     "00-install.sh",
@@ -749,9 +752,9 @@ foreach ($F in $UtilsFiles) {
     $Src = Join-Path $ScriptRoot $F
     if (Test-Path $Src) {
         Copy-Item $Src (Join-Path $UtilsDir $F) -Force
-        Ok "  utils: $F"
+        Write-Host "[ OK ] utils: $F" -ForegroundColor Green
     } else {
-        Warn "  utils: $F 不存在，跳过。"
+        Write-Host "[WARN] utils: $F 不存在，跳过。" -ForegroundColor Yellow
     }
 }
 
