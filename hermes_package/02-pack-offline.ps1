@@ -808,7 +808,7 @@ if ($SevenZipCmd) {
 
 if ($SevenZipExe) {
 
-    Info "使用 7-Zip 压缩（多线程 -mmt=on，压缩级别 -mx=3）..."
+    Write-Host "[INFO] 使用 7-Zip 压缩（多线程 -mmt=on，压缩级别 -mx=3）..." -ForegroundColor Cyan
 
     & $SevenZipExe a -tzip -mx=3 -mmt=on $ZipPath "$BundleRoot\*"
 
@@ -818,8 +818,8 @@ if ($SevenZipExe) {
 
 } else {
 
-    Warn "未找到 7-Zip，使用内置 Compress-Archive（单线程，较慢）。"
-    Warn "建议安装 7-Zip 以加速：winget install 7zip.7zip"
+    Write-Host "[WARN] 未找到 7-Zip，使用内置 Compress-Archive（单线程，较慢）。" -ForegroundColor Yellow
+    Write-Host "[WARN] 建议安装 7-Zip 以加速：winget install 7zip.7zip" -ForegroundColor Yellow
 
     Compress-Archive `
         -Path "$BundleRoot\*" `
