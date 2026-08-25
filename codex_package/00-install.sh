@@ -114,18 +114,17 @@ build_bundle() {
 
     echo
     echo "============================================================"
-    echo "  1. 构建并打包 Codex 离线包"
+    echo "  1. 构建 Codex FULL Offline Bundle"
     echo "============================================================"
     echo
     echo "适用于：外网 Windows 构建机"
     echo
-    echo "将准备："
+    echo "将准备（下载并保存到 codex-agent 目录）："
     echo "  - 获取最新 Codex 版本"
     echo "  - 下载完整 npm 离线缓存 (npm-cache)"
-    echo "  - 生成 Codex npm 打包文件 (npm-packages)"
-    echo "  - 执行真实离线安装测试"
-    echo "  - 生成 SHA256 校验与部署脚本"
-    echo "  - 输出离线 ZIP 压缩包"
+    echo "  - 生成 Codex npm 离线安装包 (npm-packages/*.tgz)"
+    echo "  - 执行真实离线安装测试 (npm ci --offline)"
+    echo "  - 生成 SHA256 校验与 manifest.json"
     echo
     echo -e "${YELLOW}注意：该步骤需要访问互联网。${RESET}"
     echo
@@ -134,7 +133,7 @@ build_bundle() {
 
     case "$answer" in
         y|Y)
-            run_ps1 "01-build-codex-offline.ps1"
+            run_ps1 "01-build-offline.ps1"
             ;;
         *)
             echo "已取消。"
@@ -144,7 +143,41 @@ build_bundle() {
 }
 
 # ------------------------------------------------------------
-# 2. Install
+# 2. Pack
+# ------------------------------------------------------------
+
+pack_bundle() {
+    clear
+
+    echo
+    echo "============================================================"
+    echo "  2. 打包 Codex FULL Offline Bundle"
+    echo "============================================================"
+    echo
+
+    if [[ ! -d "_build/Codex-Offline-Bundle" && ! -d "codex-agent" ]]; then
+        echo -e "${RED}[错误] 找不到构建产物：_build/Codex-Offline-Bundle 或 codex-agent${RESET}"
+        echo
+        echo "请先执行 [1] 构建。"
+        pause_screen
+        return
+    fi
+
+    read -r -p "确认开始打包离线 ZIP？[y/N] " answer
+
+    case "$answer" in
+        y|Y)
+            run_ps1 "02-pack-offline.ps1"
+            ;;
+        *)
+            echo "已取消。"
+            sleep 1
+            ;;
+    esac
+}
+
+# ------------------------------------------------------------
+# 3. Install
 # ------------------------------------------------------------
 
 install_bundle() {
@@ -152,26 +185,19 @@ install_bundle() {
 
     echo
     echo "============================================================"
-    echo "  2. 安装 Codex CLI (离线模式)"
+    echo "  3. 安装 Codex CLI (离线模式)"
     echo "============================================================"
     echo
     echo "适用于：内网 / 离线 Windows"
     echo
-    echo "本步骤不访问互联网，从本地 npm-packages / npm-cache 离线安装。"
+    echo "本步骤不访问互联网，完全从本地 codex-agent/npm-packages 离线安装。"
     echo
 
     read -r -p "确认开始离线安装？[y/N] " answer
 
     case "$answer" in
         y|Y)
-            if [[ -f "$SCRIPT_DIR/03-install-offline.ps1" ]]; then
-                run_ps1 "03-install-offline.ps1"
-            elif [[ -f "$SCRIPT_DIR/deployment/install.ps1" ]]; then
-                run_ps1 "deployment/install.ps1"
-            else
-                echo -e "${RED}[错误] 找不到安装脚本 (03-install-offline.ps1 / deployment/install.ps1)${RESET}"
-                pause_screen
-            fi
+            run_ps1 "03-install-offline.ps1"
             ;;
         *)
             echo "已取消。"
@@ -181,7 +207,7 @@ install_bundle() {
 }
 
 # ------------------------------------------------------------
-# 3. Verify
+# 4. Verify
 # ------------------------------------------------------------
 
 verify_bundle() {
@@ -189,7 +215,7 @@ verify_bundle() {
 
     echo
     echo "============================================================"
-    echo "  3. 验证 Codex 环境"
+    echo "  4. 验证 Codex 离线环境"
     echo "============================================================"
     echo
     echo "将检查："
@@ -198,49 +224,11 @@ verify_bundle() {
     echo "  [3] Codex CLI 命令与版本"
     echo
 
-    if [[ -f "$SCRIPT_DIR/04-verify-offline.ps1" ]]; then
-        run_ps1 "04-verify-offline.ps1"
-    elif [[ -f "$SCRIPT_DIR/deployment/check.ps1" ]]; then
-        run_ps1 "deployment/check.ps1"
-    else
-        echo -e "${RED}[错误] 找不到验证脚本 (04-verify-offline.ps1 / deployment/check.ps1)${RESET}"
-        pause_screen
-    fi
+    run_ps1 "04-verify-offline.ps1"
 }
 
 # ------------------------------------------------------------
-# 4. Uninstall
-# ------------------------------------------------------------
-
-uninstall_bundle() {
-    clear
-
-    echo
-    echo "============================================================"
-    echo "  4. 卸载 Codex CLI"
-    echo "============================================================"
-    echo
-
-    read -r -p "确认卸载 Codex CLI？[y/N] " answer
-
-    case "$answer" in
-        y|Y)
-            if [[ -f "$SCRIPT_DIR/deployment/uninstall.ps1" ]]; then
-                run_ps1 "deployment/uninstall.ps1"
-            else
-                echo -e "${RED}[错误] 找不到卸载脚本 (deployment/uninstall.ps1)${RESET}"
-                pause_screen
-            fi
-            ;;
-        *)
-            echo "已取消。"
-            sleep 1
-            ;;
-    esac
-}
-
-# ------------------------------------------------------------
-# 5. Show Files
+# 5. Files
 # ------------------------------------------------------------
 
 show_files() {
@@ -248,30 +236,49 @@ show_files() {
 
     echo
     echo "============================================================"
-    echo "  当前目录文件"
+    echo "  当前目录文件与物料"
     echo "============================================================"
     echo
-    echo "脚本文件："
-    find . -maxdepth 2 -type f \( -name "*.ps1" -o -name "*.sh" \) | sed 's|^./|  |' 2>/dev/null
+    echo "PowerShell 脚本："
+    find . -maxdepth 1 -type f -name "*.ps1" -printf "  %f\n" 2>/dev/null || ls *.ps1 2>/dev/null
 
     echo
-    echo "关键离线资源："
-    for item in "npm-cache" "npm-packages" "package.json" "package-lock.json" "VERSION.txt" "SHA256SUMS.txt" "README.md" "deployment"; do
-        if [[ -e "$item" ]]; then
-            echo -e "  [存在] $item"
-        else
-            echo -e "  [缺失] $item"
-        fi
-    done
+    echo "Shell 脚本："
+    find . -maxdepth 1 -type f -name "*.sh" -printf "  %f\n" 2>/dev/null || ls *.sh 2>/dev/null
+
+    echo
+    echo "物料目录 (codex-agent)："
+    if [[ -d "codex-agent" ]]; then
+        echo "  [存在] codex-agent/"
+        ls -la "codex-agent" 2>/dev/null | head -15
+    else
+        echo "  [不存在] 请先执行 [1] 构建"
+    fi
+
+    echo
+    echo "构建临时目录 (_build)："
+    if [[ -d "_build" ]]; then
+        echo "  [存在] _build/"
+    else
+        echo "  [不存在]"
+    fi
+
+    echo
+    echo "输出目录 (output)："
+    if [[ -d "output" ]]; then
+        find "output" -maxdepth 1 -type f -printf "  %f\n" 2>/dev/null || ls output 2>/dev/null
+    else
+        echo "  [不存在]"
+    fi
 
     pause_screen
 }
 
 # ------------------------------------------------------------
-# 6. Environment Check
+# 6. PowerShell / Environment Check
 # ------------------------------------------------------------
 
-environment_check() {
+powershell_check() {
     clear
 
     echo
@@ -332,38 +339,40 @@ show_guide() {
      ./00-install.sh
 
 2. 选择：
-     [1] 构建并打包 Codex 离线包
+     [1] 构建 Codex FULL Offline Bundle
+   （物料自动下载并保存在 codex-agent 目录）
 
-3. 完成后在上一级目录生成：
-     CodexPackage-x.x.x.zip
+3. 选择：
+     [2] 打包 Offline ZIP
+   （在 output/ 目录生成 Codex-FULL-Offline-vx.x.x-win64.zip）
 
 
 【二、复制到内网环境】
 
-1. 将 ZIP 复制到内网 Windows 机器。
-2. 解压到任意目录（例如 D:\CodexAPP\CodexPackage-x.x.x）。
+1. 将 output/ 目录下的 ZIP 压缩包复制到内网 Windows 机器。
+2. 解压到目标目录（保持同级目录整洁，所有物料都在 codex-agent/ 中）。
 
 
 【三、内网一键安装】
 
-1. 在解压后的目录中打开 Git Bash（或管理员 PowerShell）。
+1. 在解压目录打开 Git Bash（或 PowerShell）。
 2. 执行：
      ./00-install.sh
 3. 选择：
-     [2] 安装 Codex CLI (离线模式)
+     [3] 安装 Codex CLI (离线模式)
 
 
 【四、安装后验证】
 
 1. 在菜单中选择：
-     [3] 验证 Codex 环境
-2. 可以在任意终端输入 `codex --version` 验证。
+     [4] 验证离线环境
+2. 亦可在终端输入 `codex --version` 验证。
 
 
-【五、离线原则】
+【五、内网原则】
 
-内网机器安装时无需联网，所有依赖完全来自离线包中的
-`npm-packages` 与 `npm-cache`。
+内网机器安装时无需连接外网，所有依赖包均来自本地 codex-agent/npm-packages
+与 codex-agent/npm-cache。
 ============================================================
 EOF
 
@@ -377,15 +386,15 @@ EOF
 while true; do
     show_header
 
-    echo "  [1] 外网构建机 - 构建并打包 Codex 离线包"
+    echo "  [1] 外网构建机 - 构建 Codex Offline Bundle"
     echo
-    echo "  [2] 内网 Windows - 离线安装 Codex CLI"
+    echo "  [2] 外网构建机 - 打包 Offline ZIP"
     echo
-    echo "  [3] 内网 Windows - 验证 Codex 环境"
+    echo "  [3] 内网 Windows - 安装 Codex CLI"
     echo
-    echo "  [4] 内网 Windows - 卸载 Codex CLI"
+    echo "  [4] 内网 Windows - 验证离线环境"
     echo
-    echo "  [5] 查看当前目录文件"
+    echo "  [5] 查看当前文件与物料"
     echo
     echo "  [6] 环境检查 (Node / npm / PowerShell)"
     echo
@@ -403,19 +412,19 @@ while true; do
             build_bundle
             ;;
         2)
-            install_bundle
+            pack_bundle
             ;;
         3)
-            verify_bundle
+            install_bundle
             ;;
         4)
-            uninstall_bundle
+            verify_bundle
             ;;
         5)
             show_files
             ;;
         6)
-            environment_check
+            powershell_check
             ;;
         7)
             show_guide
