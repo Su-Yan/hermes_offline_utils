@@ -3,7 +3,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PS_SCRIPT="${SCRIPT_DIR}/build-codex-offline.ps1"
+PS_SCRIPT="${SCRIPT_DIR}/01-build-codex-offline.ps1"
 
 echo
 echo "============================================================"

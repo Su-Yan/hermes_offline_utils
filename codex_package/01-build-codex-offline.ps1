@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 
 $ErrorActionPreference = "Stop"
 
@@ -651,6 +651,50 @@ Set-Content `
 Write-Host ""
 Write-Host "Creating offline ZIP..." -ForegroundColor Cyan
 
+# 清理测试安装目录，避免将临时测试的 node_modules 打包进压缩包
+if (Test-Path $TestDir) {
+    Remove-Item `
+        -Path $TestDir `
+        -Recurse `
+        -Force
+}
+
+$BuildDir = Join-Path $Root "_build"
+$BundleDir = Join-Path $BuildDir "Codex-Offline-Bundle"
+
+if (Test-Path $BundleDir) {
+    Remove-Item `
+        -Path $BundleDir `
+        -Recurse `
+        -Force
+}
+
+New-Item `
+    -ItemType Directory `
+    -Path $BundleDir `
+    -Force | Out-Null
+
+$BundleItems = @(
+    $PackageJson,
+    $PackageLock,
+    $VersionFile,
+    $ShaFile,
+    (Join-Path $Root "README.md"),
+    $DeployDir,
+    $NpmCacheDir,
+    $PackageDir
+)
+
+foreach ($Item in $BundleItems) {
+    if (Test-Path $Item) {
+        Copy-Item `
+            -Path $Item `
+            -Destination $BundleDir `
+            -Recurse `
+            -Force
+    }
+}
+
 $Parent = Split-Path `
     -Parent `
     $Root
@@ -670,10 +714,28 @@ if (Test-Path $Zip) {
         -Force
 }
 
-Compress-Archive `
-    -Path "$Root\*" `
-    -DestinationPath $Zip `
-    -CompressionLevel Optimal
+# 优先尝试 7-Zip（速度更快且无文件占用问题），否则回退到 Compress-Archive
+$SevenZipCmd = Get-Command 7z -ErrorAction SilentlyContinue
+if (-not $SevenZipCmd) {
+    $SevenZipCmd = Get-Command 7za -ErrorAction SilentlyContinue
+}
+
+if ($SevenZipCmd) {
+    & $SevenZipCmd.Source a -tzip "$Zip" "$BundleDir\*" -mx=7 -mmt=on | Out-Null
+} else {
+    Compress-Archive `
+        -Path "$BundleDir\*" `
+        -DestinationPath $Zip `
+        -CompressionLevel Optimal
+}
+
+# 清理临时 staging 目录
+if (Test-Path $BuildDir) {
+    Remove-Item `
+        -Path $BuildDir `
+        -Recurse `
+        -Force
+}
 
 Write-Host ""
 Write-Host "============================================================"
