@@ -372,21 +372,21 @@ $ErrorActionPreference = "Stop"
 # Codex CLI Offline Installer
 # ============================================================
 
-$Root = Split-Path `
-    -Parent `
-    $PSScriptRoot
+$ScriptDir = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($ScriptDir)) {
+    $ScriptDir = (Get-Location).Path
+}
 
-$PackageJson = Join-Path `
-    $Root `
-    "package.json"
+if (Test-Path (Join-Path $ScriptDir "package.json")) {
+    $Root = $ScriptDir
+} else {
+    $Root = Split-Path -Parent $ScriptDir
+}
 
-$PackageLock = Join-Path `
-    $Root `
-    "package-lock.json"
-
-$CacheDir = Join-Path `
-    $Root `
-    "npm-cache"
+$PackageJson = Join-Path $Root "package.json"
+$PackageLock = Join-Path $Root "package-lock.json"
+$CacheDir    = Join-Path $Root "npm-cache"
+$PackageDir  = Join-Path $Root "npm-packages"
 
 Write-Host ""
 Write-Host "============================================================"
@@ -420,15 +420,15 @@ if ($LASTEXITCODE -ne 0) {
 # ------------------------------------------------------------
 
 if (!(Test-Path $PackageJson)) {
-    throw "package.json not found."
+    throw "package.json not found in $Root"
 }
 
 if (!(Test-Path $PackageLock)) {
-    throw "package-lock.json not found."
+    throw "package-lock.json not found in $Root"
 }
 
 if (!(Test-Path $CacheDir)) {
-    throw "npm-cache not found."
+    throw "npm-cache not found in $Root"
 }
 
 # ------------------------------------------------------------
@@ -439,13 +439,32 @@ Write-Host ""
 Write-Host "[3] Installing Codex CLI..."
 Write-Host ""
 
-npm install `
-    -g `
-    "$Root\package.json" `
-    --cache $CacheDir `
-    --offline `
-    --no-audit `
-    --no-fund
+$PackageTgz = $null
+if (Test-Path $PackageDir) {
+    $PackageTgz = Get-ChildItem -Path $PackageDir -Filter "*.tgz" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+}
+
+if ($null -ne $PackageTgz) {
+    Write-Host "Using offline package: $($PackageTgz.FullName)"
+    npm install `
+        -g `
+        $PackageTgz.FullName `
+        --cache $CacheDir `
+        --offline `
+        --prefer-offline `
+        --no-audit `
+        --no-fund
+} else {
+    Write-Host "Using offline project root: $Root"
+    npm install `
+        -g `
+        "$Root" `
+        --cache $CacheDir `
+        --offline `
+        --prefer-offline `
+        --no-audit `
+        --no-fund
+}
 
 if ($LASTEXITCODE -ne 0) {
 
@@ -609,25 +628,31 @@ npm: $NpmVersion
 
 ## Offline Installation
 
+### Method 1 (Recommended - Git Bash / Bash):
+
+Run:
+
+    ./00-install.sh
+
+Select [2] to install.
+
+### Method 2 (PowerShell):
+
 Open PowerShell as Administrator.
 
 Run:
 
     Set-ExecutionPolicy -Scope Process Bypass
 
-Then:
+    .\03-install-offline.ps1
 
-    cd deployment
+Verify:
 
-    .\install.ps1
-
-Check:
-
-    .\check.ps1
+    .\04-verify-offline.ps1
 
 ## Uninstall
 
-    .\uninstall.ps1
+    .\deployment\uninstall.ps1
 
 ## Important
 
@@ -680,6 +705,9 @@ $BundleItems = @(
     $VersionFile,
     $ShaFile,
     (Join-Path $Root "README.md"),
+    (Join-Path $Root "00-install.sh"),
+    (Join-Path $Root "03-install-offline.ps1"),
+    (Join-Path $Root "04-verify-offline.ps1"),
     $DeployDir,
     $NpmCacheDir,
     $PackageDir
