@@ -15,6 +15,10 @@ output/
 # Hermes Agent 源码（01-build-offline.ps1 会自动从 GitHub 克隆）
 hermes-agent/
 
+# Codex / Claude Agent 物料目录
+codex-agent/
+claude-agent/
+
 # 预下载的 Python wheel（可自行用 uv pip download 获取）
 wheels/
 
